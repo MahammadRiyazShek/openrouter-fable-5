@@ -78,8 +78,18 @@ function binarySniff(u8) {
   return n > 0 && odd / n > 0.12;
 }
 
+/**
+ * Bytes → text, or null if it isn't text.
+ * Accepts an ArrayBuffer or any typed-array view. Taking views seriously
+ * matters: JSZip hands back a Uint8Array that can be a window onto a much
+ * larger buffer, and `new Uint8Array(view.buffer)` would then read the
+ * neighbouring entries too, hit their NUL bytes, and report perfectly good
+ * source files as binary.
+ */
 function decodeText(buf) {
-  const u8 = new Uint8Array(buf);
+  const u8 = ArrayBuffer.isView(buf)
+    ? new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength)
+    : new Uint8Array(buf);
   if (binarySniff(u8)) return null;
   try {
     return new TextDecoder('utf-8', { fatal: false })
@@ -177,15 +187,18 @@ async function fromZip(file, report) {
   for (const item of all) {
     const parts = item.path.split('/');
     const inSkipDir = parts.slice(0, -1).some((p) => SKIP_DIRS.has(p.toLowerCase()));
-    const size = item.entry._data?.uncompressedSize ?? 0;
+    /* JSZip exposes the uncompressed size only on a private field, so treat a
+       miss as "unknown" rather than zero — zero would sail past the size cap. */
+    const size = item.entry._data?.uncompressedSize ?? null;
+    const tooBig = size != null && size > LIMITS.zipEntryBytes;
     if (inSkipDir || SKIP_FILE_RX.test(item.path) || baseName(item.path).startsWith('._')) {
       skipped.push({ path: item.path, size, why: 'ignored' });
     } else if (!looksTextual(item.path)) {
       skipped.push({ path: item.path, size, why: 'binary' });
-    } else if (size > LIMITS.zipEntryBytes) {
+    } else if (tooBig) {
       skipped.push({ path: item.path, size, why: 'too big' });
     } else {
-      keep.push({ ...item, size });
+      keep.push({ ...item, size: size ?? 0 });
     }
   }
 
@@ -215,7 +228,7 @@ async function fromZip(file, report) {
       skipped.push({ path: item.path, size: item.size, why: 'unreadable' });
       continue;
     }
-    const text = decodeText(raw.buffer);
+    const text = decodeText(raw);
     if (text == null) { skipped.push({ path: item.path, size: item.size, why: 'binary' }); continue; }
     const room = Math.max(2000, Math.min(LIMITS.charsPerFile, LIMITS.charsTotal - used));
     const cut = clip(text, room);

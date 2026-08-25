@@ -1,5 +1,5 @@
-import { parseInfo, normalizeFences, filesFromMarkdown, collectFiles, pickEntry, stitchPreview } from './render.js';
-import { buildParts, looksTextual } from './ingest.js';
+import { parseInfo, normalizeFences, filesFromMarkdown, collectFiles, pickEntry, stitchPreview } from '../js/render.js';
+import { buildParts, looksTextual } from '../js/ingest.js';
 
 let pass = 0, fail = 0;
 const eq = (label, got, want) => {

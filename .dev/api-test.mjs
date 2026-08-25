@@ -2,8 +2,8 @@
    (persistence, quota pruning). Run with: node api-test.mjs */
 
 import './shim.mjs';
-import { state, newChat, activeChat, persist, loadChats, renameChat, deleteChat, wipeAll, estTokens } from './store.js';
-import { sendChat, fetchModels, pickDefaultModel, priceLine, checkKey } from './api.js';
+import { state, newChat, activeChat, persist, loadChats, renameChat, deleteChat, wipeAll, estTokens } from '../js/store.js';
+import { sendChat, fetchModels, pickDefaultModel, priceLine, checkKey } from '../js/api.js';
 
 let pass = 0, fail = 0;
 const ok = (label, cond, extra = '') => {

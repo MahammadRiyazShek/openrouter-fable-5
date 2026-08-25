@@ -1,18 +1,32 @@
 # Blueprint
 
-A single-page workbench for OpenRouter. Paste your API key, pick a model, attach anything — a zip of a codebase, a PDF spec, a spreadsheet, a screenshot — and ask it to build what you need. Whatever the model writes back as files gets collected into a side panel you can preview and download as a zip.
+A workbench for OpenRouter that runs entirely in your browser. Paste your API key, pick a model, attach anything — a zip of a codebase, a PDF spec, a spreadsheet, a screenshot — and ask for what you want built. Whatever the model writes back as files is collected in a side panel you can preview and download as a zip.
 
-There is no server, no build step and no npm install. Every file in this repository is shipped to the browser exactly as it sits on disk, which is why the same commit deploys unchanged to GitHub Pages and to Vercel.
+No server, no build step, no `npm install`. Nothing is proxied through anyone else: your key goes from your browser straight to `openrouter.ai`.
 
-## What you get
+## Two builds. Use the first one.
 
-The chat itself streams token by token, keeps a local history of conversations, renders markdown with syntax highlighting, and shows token usage and cost per reply when OpenRouter reports it. Uploads are read entirely in your own browser: zips are walked and the interesting text files pulled out, PDFs are parsed to text (or handed to OpenRouter's native PDF pipeline if you prefer), Word and Excel files are converted, images are sent as image parts to vision-capable models. The "cut sheet" on the right watches every reply for fenced code blocks that name a file, folds revisions across turns so the newest version of each path wins, and offers per-file copy and save, a whole-project zip, and a sandboxed live preview that inlines sibling CSS and JS so a generated multi-file site runs without a server.
+**`single-file/index.html`** is the whole app in one file — HTML, CSS and JavaScript inlined, no folders, no dependencies at upload time. Upload that one file and there is nothing left that can go missing. This is the build to use if a previous upload half-completed, or if you just want the shortest path to a working site.
 
-The model list is fetched live from your account, so whichever Claude Fable release your key can see shows up in the picker without anything here needing to change. The default model is resolved at runtime against that list — anything matching `fable` is preferred, then Claude Sonnet/Opus 4, then any Anthropic model — and there's a manual field in the picker if you want to type an exact model ID.
+The multi-file build at the repository root is the same app with the source split up (`styles.css`, `js/*.js`). It is nicer to edit and it is what the single file is generated from, but it has one failure mode worth understanding: the browser loads `js/app.js` as an ES module, and if any one module is missing the **entire** module graph fails. The page still draws, and then nothing works — no attach button, no send, no key dialog. A partly-finished upload looks exactly like a broken app.
 
-## Files in this repository
+Both builds are byte-identical in behaviour. Rebuild the single file after editing the source with:
 
-Upload all of these, keeping the layout intact:
+```bash
+node .dev/bundle.mjs
+```
+
+## Putting it online
+
+### GitHub Pages, the short way
+
+Create a new repository. On the empty repo page choose **uploading an existing file**, drag in `single-file/index.html`, and **rename it to `index.html`** so it sits at the root — the file box lets you edit the name before committing. Commit. Then **Settings → Pages → Source: Deploy from a branch**, branch `main`, folder `/ (root)`, Save. Give it a minute and the site is at `https://<your-user>.github.io/<repo>/`.
+
+Watch the commit finish before you navigate away. A red ✗ next to the commit means a workflow failed, not that your files are missing; a spinner means it is still going. If files are missing from the repository's file list, the upload did not complete — do it again rather than assuming Pages will catch up.
+
+### GitHub Pages, the whole repository
+
+Upload everything, keeping the folder layout intact:
 
 ```
 index.html                          app shell and dialogs
@@ -24,33 +38,29 @@ js/api.js                           OpenRouter models / key / chat + SSE streami
 js/ingest.js                        zip, PDF, docx, xlsx, image, text extraction
 js/render.js                        markdown rendering and fences -> files
 js/app.js                           wiring: UI, events, turns, panels
+single-file/index.html              the one-file build (generated)
 vercel.json                         headers and clean URLs for Vercel
 .nojekyll                           stops GitHub Pages from filtering files
-.gitignore
-.github/workflows/deploy-pages.yml  Pages deploy via Actions (see below)
+.github/workflows/deploy-pages.yml  Pages deploy via Actions
 README.md
 .dev/                               test harness — optional, delete if you like
 ```
 
-`.nojekyll` matters more than it looks: without it GitHub Pages runs the tree through Jekyll, which ignores paths beginning with an underscore and can interfere with asset serving. Keep the empty file.
+Then either set **Settings → Pages → Source** to **GitHub Actions** and let the included workflow publish the root on every push, or use **Deploy from a branch** with `main` and `/ (root)` and delete the workflow file. Drag-and-drop upload in the GitHub web UI does preserve folders if you drag the `js` folder itself rather than the loose files inside it.
 
-`.dev/` holds a small Node test harness (117 assertions over the fence parser, the SSE stream reader, error mapping and storage pruning) that runs against a hand-written DOM stub. It is never loaded by the site — see `.dev/README.md` if you want to run it.
+`.nojekyll` matters more than it looks: without it Pages runs the tree through Jekyll, which ignores paths beginning with an underscore. Keep the empty file.
 
-## Deploying to GitHub Pages
+### Vercel
 
-Create a repository, push these files to the root of the default branch (not into a subfolder), then in the repository open **Settings → Pages**. Either source works:
+Import the repository at [vercel.com/new](https://vercel.com/new). Framework preset **Other**, build command empty, output directory `.`. There is nothing to compile, so the deploy is a file copy. `vercel.json` adds a few security headers and tells Vercel not to cache `js/*` or `styles.css`, so a redeploy shows up immediately instead of after a cache expiry.
 
-Choose **GitHub Actions** and the included workflow publishes the repo root on every push to `main`. Or choose **Deploy from a branch**, set branch to `main` and folder to `/ (root)`, and Pages serves the files directly — in that case the workflow file is harmless and can be deleted.
+If you only want the single-file build on Vercel, put that one `index.html` in an otherwise empty repository — the settings above are unchanged.
 
-The site lands at `https://<user>.github.io/<repo>/`. Every path in the project is relative, so the subdirectory is not a problem.
+### Running it from your own machine
 
-## Deploying to Vercel
+The single file opens by double-clicking it. No server needed, because it is a classic script rather than a module.
 
-Import the repository at [vercel.com/new](https://vercel.com/new). When Vercel asks about the framework, choose **Other**, leave the build command empty and set the output directory to the repository root (`.`). There is nothing to compile, so the deploy is a file copy. `vercel.json` adds a few security headers and tells Vercel not to cache `js/*` or `styles.css`, so a redeploy shows up immediately instead of after a cache expiry.
-
-## Running it locally
-
-The app uses ES modules, which browsers refuse to load over `file://`. Serve the folder instead:
+The multi-file build needs a server, since browsers refuse to load ES modules over `file://`:
 
 ```bash
 cd path/to/the/repo
@@ -58,29 +68,35 @@ python3 -m http.server 8000
 # then open http://localhost:8000
 ```
 
-`npx serve` works equally well if you'd rather use Node.
-
 ## First run
 
-Click **Add key** (or the key badge in the sidebar), paste your OpenRouter key — it starts with `sk-or-` — and save. The key is verified against `GET /api/v1/key`, which also reads back your credit and rate-limit status, then the model catalogue loads. Tick "Remember on this device" to keep the key in `localStorage`; leave it unticked and it lives in `sessionStorage` and disappears when you close the tab.
+Click **Connect your API key**, paste your OpenRouter key — it starts with `sk-or-` — and save. The key is verified against `GET /api/v1/key`, which also reads back your credit and rate-limit status, then the model catalogue loads.
 
-From there: type a prompt, or drag files anywhere onto the window, or paste an image straight into the composer. The context meter under the composer estimates how much of the model's window your attachments will occupy before you send, and warns you if you've attached an image to a model without vision.
+The model list comes live from your account, so whichever Claude Fable release your key can see appears in the picker without anything here needing to change. The default is resolved at runtime against that list: anything matching `fable` wins, then Claude Sonnet/Opus 4, then any Anthropic model. There is also a field in the picker for typing an exact model ID if you want one that isn't listed.
 
-Settings (gear icon, bottom of the sidebar) covers the system prompt, temperature, max output tokens, how many previous turns to resend, PDF handling (parse locally vs. let OpenRouter parse it), streaming, and whether to display reasoning tokens. There's also an export button that writes your whole history to JSON, and a wipe button that clears everything including the key.
+From there: type a prompt, drag files anywhere onto the window, or paste an image straight into the composer. There is no length limit on the message box — paste an entire file into it if you like. The context meter underneath estimates how much of the model's window your attachments will occupy before you send, and warns you if you've attached an image to a model without vision.
+
+## When something doesn't work
+
+Open **Settings → Run self-check**. It reports the build type, browser support, storage, key and model status, then loads each parser library and finally generates a zip and reads it back through the real attachment path. Any line marked FAILED is the actual cause.
+
+The most common real fault is a blocked CDN. Parsers for zip, PDF, Word and Excel files are fetched on demand from jsDelivr, with unpkg and cdnjs as fallbacks, because several ISPs — Indian ones especially — block `cdn.jsdelivr.net` outright. If all three are unreachable the self-check says so by name. An ad blocker or a corporate proxy can do the same thing; try a private window with extensions disabled.
+
+If the page comes up and nothing at all responds, wait four seconds: a watchdog in the page will replace the screen with a message naming whatever failed to load. Chat and markdown keep working when a CDN is blocked — only file reading and syntax colouring need those libraries.
 
 ## About the key
 
-This is a static site with no backend, so your key is used directly from the browser: it is stored only in your own browser storage and sent only to `openrouter.ai` over HTTPS, as an `Authorization` header. Nothing is proxied through a third party and no telemetry is collected.
+This is a static site with no backend, so the key is used directly from the browser. It is stored only in your own browser — `localStorage` if you tick "keep this key on this device", otherwise `sessionStorage`, which forgets it when the tab closes — and sent only to `openrouter.ai` over HTTPS as an `Authorization` header. No telemetry, no proxy.
 
-The trade-off worth knowing: anyone who can use the deployed page — or read your browser storage — can spend from that key. If you publish the URL, treat it like sharing the key. Two sensible precautions are to create a dedicated OpenRouter key for this site so you can revoke it independently, and to set a credit limit on that key in the OpenRouter dashboard. If you'd rather the key never reach the browser at all, that requires a server-side proxy, which by design this project doesn't have.
+The trade-off worth knowing: anyone who can open the deployed page, or read your browser storage, can spend from that key. If you publish the URL, treat that as sharing the key. Two sensible precautions: create a dedicated OpenRouter key for this site so you can revoke it on its own, and set a credit limit on it in the OpenRouter dashboard. Keeping the key out of the browser entirely would need a server-side proxy, which this project deliberately doesn't have.
 
 ## Limits and behaviour worth knowing
 
-Uploads are capped to keep a careless drop from freezing the tab: 48 MB per file, 800 KB and 400 entries per zip, 120 PDF pages, 12 MB per image, and roughly 220k characters per extracted file with a 900k ceiling across one message's attachments. Anything longer is truncated with a visible marker rather than silently dropped. Binary files inside a zip are skipped, as are `node_modules`, `.git`, lockfiles and build output.
+Uploads are capped so a careless drop can't freeze the tab: 48 MB per file, 800 KB and 400 entries per zip, 120 PDF pages, 12 MB per image, roughly 220k characters per extracted file and 900k across one message's attachments. Anything longer is truncated with a visible marker rather than silently dropped. Inside a zip, binaries are skipped along with `node_modules`, `.git`, lockfiles, minified files and build output; the full listing is still sent so the model knows what exists and can ask for a specific path.
 
-Chat history lives in `localStorage`, which is a few megabytes at best. When it fills up the oldest attachment payloads are pruned first so your conversations survive; the transcript is what's worth keeping. History is per-browser and per-origin — it does not sync between devices.
+Chat history lives in `localStorage`, which is a few megabytes at best. When it fills, the oldest attachment payloads are pruned first so the transcripts survive. History is per-browser and per-origin — it does not sync between devices.
 
-Third-party parsers (marked, DOMPurify, highlight.js, JSZip, pdf.js, mammoth, SheetJS) load on demand from jsDelivr the first time a feature needs them. If a CDN is blocked, markdown falls back to plain text and code stays unhighlighted rather than the page breaking.
+For files the model writes: it is asked to put the path on the code fence, like ` ```js src/app.js `. The cut sheet folds revisions across turns so the newest version of each path wins, and offers per-file copy, whole-project zip, and a sandboxed preview that inlines sibling CSS and JS so a generated multi-file site runs without a server.
 
 ## Licence
 

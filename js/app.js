@@ -2,7 +2,7 @@
    app.js — wiring: chat loop, attachments, cut sheet, settings
    ============================================================ */
 
-import { DEFAULTS, lib } from './config.js';
+import { DEFAULTS, lib, cdnLog } from './config.js';
 import {
   state, uid, bytes, count, estTokens, tokenish, ago,
   loadKey, saveKey, clearKey, loadSettings, saveSettings,
@@ -36,6 +36,9 @@ const live = {
    ------------------------------------------------------------ */
 
 async function boot() {
+  /* Tells the watchdog in index.html that the script really did start. */
+  window.__bpBoot = true;
+
   loadKey();
   loadSettings();
   loadModelCache();
@@ -653,8 +656,21 @@ function autosize() {
   t.style.height = `${Math.min(t.scrollHeight, Math.round(innerHeight * 0.44))}px`;
 }
 
+/* There is no character limit on the message box, so people do paste whole
+   files into it. Re-measuring the textarea and re-summing the history on every
+   keystroke is fine at 200 characters and painful at 200,000, so coalesce the
+   work into one pass per frame-ish instead of one per input event. */
+function coalesce(fn, ms = 120) {
+  let timer = 0;
+  return () => {
+    clearTimeout(timer);
+    timer = setTimeout(fn, ms);
+  };
+}
+const refreshComposer = coalesce(() => { autosize(); paintContextMeta(); });
+
 function bindComposer() {
-  el.prompt.addEventListener('input', () => { autosize(); paintContextMeta(); });
+  el.prompt.addEventListener('input', refreshComposer);
   el.prompt.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); }
   });
@@ -696,6 +712,8 @@ function bindComposer() {
 
 async function take(fileList) {
   const files = [...fileList];
+  if (!files.length) return;
+
   const placeholders = files.map((f) => {
     const stub = { id: uid(), name: f.name, bytes: f.size, kind: 'text', busy: true, note: 'Reading…', chars: 0 };
     live.pending.push(stub);
@@ -705,13 +723,28 @@ async function take(fileList) {
 
   for (let i = 0; i < files.length; i++) {
     const stub = placeholders[i];
-    const [att] = await ingest([files[i]], { pdfMode: state.settings.pdfMode }, (_, msg) => {
-      if (msg) { stub.note = msg; paintRack(); }
-    });
+    let att;
+    try {
+      [att] = await ingest([files[i]], { pdfMode: state.settings.pdfMode }, (_, msg) => {
+        if (msg) { stub.note = msg; paintRack(); }
+      });
+    } catch (err) {
+      /* ingestOne catches its own failures, so landing here means something
+         unexpected broke. Never leave the tile spinning on "Reading…" — a
+         silent stall is the one outcome with no way to diagnose. */
+      att = { ...stub, busy: false, kind: 'binary', error: err?.message || 'Could not read that file.' };
+    }
+    if (!att) att = { ...stub, busy: false, kind: 'binary', error: 'Could not read that file.' };
+
     const at = live.pending.indexOf(stub);
     if (at >= 0) live.pending[at] = att;
     paintRack();
-    if (att.error) toast(`${att.name}: ${att.error}`, true);
+    if (att.error) {
+      /* A CDN failure is not the user's fault and not obvious from the message
+         alone, so point at the thing that explains it. */
+      const hint = /mirror|CDN/i.test(att.error) ? ' Open Settings → Run self-check.' : '';
+      toast(`${att.name}: ${att.error}${hint}`, true);
+    }
   }
   paintContextMeta();
 }
@@ -754,15 +787,27 @@ el.rack?.addEventListener('click', (e) => {
   paintRack();
 });
 
+/* Summing the resent history means walking every kept message, which is wasted
+   work while someone is typing — it only changes when the transcript does.
+   Cache it against a cheap fingerprint of the chat. */
+let histCache = { key: '', total: 0 };
+
+function historyTokens(chat) {
+  const kept = (chat?.messages || []).slice(-state.settings.historyDepth);
+  const key = `${chat?.id || ''}:${kept.length}:${chat?.updatedAt || 0}:${state.settings.historyDepth}`;
+  if (key === histCache.key) return histCache.total;
+  const total = kept.reduce((n, msg) => n + estTokens((msg.content || '').length) +
+    (msg.attachments || []).reduce((k, a) => k + attachmentTokens(a), 0), 0);
+  histCache = { key, total };
+  return total;
+}
+
 function paintContextMeta() {
   const m = findModel(state.model);
   const attached = live.pending.reduce((n, a) => n + attachmentTokens(a), 0);
   const typed = estTokens(el.prompt.value.length);
   const chat = activeChat();
-  const history = (chat?.messages || [])
-    .slice(-state.settings.historyDepth)
-    .reduce((n, msg) => n + estTokens((msg.content || '').length) +
-      (msg.attachments || []).reduce((k, a) => k + attachmentTokens(a), 0), 0);
+  const history = historyTokens(chat);
   const total = attached + typed + history + estTokens(state.settings.system.length);
 
   const bits = [];
@@ -1042,6 +1087,103 @@ function bindSheet() {
 }
 
 /* ------------------------------------------------------------
+   self-check
+
+   Attaching a file can fail for reasons the page cannot see: a
+   network that blocks public CDNs, an extension that blocks
+   inline scripts, a browser too old for <dialog>. Rather than
+   leave people guessing, run the real code path — generate a
+   zip, read it back through ingest() — and name whatever broke.
+   ------------------------------------------------------------ */
+
+const DIAG_LIBS = [
+  ['jszip', 'JSZip', 'reading .zip'],
+  ['marked', 'marked', 'markdown'],
+  ['purify', 'DOMPurify', 'sanitiser'],
+  ['hljs', 'highlight.js', 'code colours'],
+  ['pdfjs', 'pdf.js', 'PDF text'],
+  ['mammoth', 'mammoth', 'reading .docx'],
+  ['xlsx', 'SheetJS', 'reading .xlsx'],
+];
+
+async function runSelfCheck() {
+  const rows = [];
+  const paint = () => { el.diagOut.innerHTML = rows.join('\n'); };
+  const say = (label, ok, detail = '') => {
+    rows.push(
+      `<b>${escapeHtml(label)}</b>  <span class="${ok ? 'yes' : 'no'}">${ok ? 'ok' : 'FAILED'}</span>` +
+      (detail ? `  ${escapeHtml(detail)}` : ''),
+    );
+    paint();
+  };
+
+  el.diagOut.hidden = false;
+  el.diagRun.disabled = true;
+  el.diagOut.innerHTML = '<b>checking…</b>';
+
+  say('build', true, window.__bpSingle ? 'single file, everything inlined' : 'modules from js/');
+  say('page origin', true, location.protocol.replace(':', ''));
+
+  const gaps = [
+    ['fetch', typeof fetch === 'function'],
+    ['streaming', typeof ReadableStream === 'function'],
+    ['TextDecoder', typeof TextDecoder === 'function'],
+    ['FileReader', typeof FileReader === 'function'],
+    ['dialogs', typeof HTMLDialogElement === 'function'],
+    ['clipboard', !!navigator.clipboard],
+  ].filter(([, has]) => !has).map(([name]) => name);
+  say('browser features', gaps.length === 0, gaps.length ? `missing: ${gaps.join(', ')} — update your browser` : 'all present');
+
+  try {
+    localStorage.setItem('bp.probe', '1');
+    localStorage.removeItem('bp.probe');
+    say('local storage', true, `about ${bytes(storageUsed())} used`);
+  } catch {
+    say('local storage', false, 'blocked — chats will vanish when you close the tab');
+  }
+
+  say('api key', !!state.key, state.key ? `connected${state.keyInfo?.label ? ` as ${state.keyInfo.label}` : ''}` : 'not connected yet');
+  say('model', !!state.model, state.model || 'none chosen');
+  say('model catalogue', state.models.length > 0, `${state.models.length} models loaded`);
+
+  for (const [name, label, what] of DIAG_LIBS) {
+    const before = cdnLog.length;
+    try {
+      await lib(name);
+      const entry = cdnLog.slice(before).find((c) => c.ok);
+      say(what, true, entry ? `from ${new URL(entry.url).host}` : 'already loaded');
+    } catch (err) {
+      say(what, false, err.message);
+    }
+  }
+
+  /* The end-to-end one: this is the path a dropped zip actually takes. */
+  try {
+    const JSZip = await lib('jszip');
+    const z = new JSZip();
+    z.file('demo/hello.txt', 'hello from the self-check\n');
+    z.file('demo/app.js', 'console.log("built");\n');
+    z.file('demo/logo.png', new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13]));
+    const blob = await z.generateAsync({ type: 'blob' });
+    const [att] = await ingest([new File([blob], 'self-check.zip', { type: 'application/zip' })], { pdfMode: 'local' });
+    const kids = att.children || [];
+    const readBack = kids.some((c) => c.text.includes('hello from the self-check'));
+    say('zip round-trip', kids.length === 2 && readBack,
+      readBack ? '2 text files read, 1 binary skipped — attachments work' : `read ${kids.length} of 2 text files`);
+  } catch (err) {
+    say('zip round-trip', false, err.message);
+  }
+
+  const broke = rows.filter((r) => r.includes('class="no"')).length;
+  rows.push('');
+  rows.push(broke
+    ? `<b>${broke} problem${broke === 1 ? '' : 's'}.</b> The FAILED lines above are the cause. Anything mentioning a CDN means your network is blocking cdn.jsdelivr.net, unpkg.com and cdnjs.cloudflare.com — try a different network, or turn off any ad blocker for this page.`
+    : '<b>Everything works.</b> If a file still will not attach, the file itself is the problem — tell me its name and size.');
+  paint();
+  el.diagRun.disabled = false;
+}
+
+/* ------------------------------------------------------------
    settings
    ------------------------------------------------------------ */
 
@@ -1091,6 +1233,14 @@ function bindSettings() {
     if (!confirm('Delete every chat, your settings and the stored key from this browser?')) return;
     wipeAll();
     location.reload();
+  });
+
+  el.diagRun.addEventListener('click', () => {
+    runSelfCheck().catch((err) => {
+      el.diagOut.hidden = false;
+      el.diagOut.innerHTML = `<span class="no">The self-check itself broke:</span> ${escapeHtml(err.message)}`;
+      el.diagRun.disabled = false;
+    });
   });
 }
 

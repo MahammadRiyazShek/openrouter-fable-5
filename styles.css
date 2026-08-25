@@ -659,6 +659,17 @@ select.field__input { appearance: none; background-image: url("data:image/svg+xm
 .danger__body { margin: 0; font-size: 12px; line-height: 1.5; color: var(--paper-far); max-width: 42ch; }
 .danger__acts { display: flex; gap: 8px; }
 
+.diag { padding: 13px 14px; border: 1px dashed var(--draft); border-radius: var(--r-md); }
+.diag__head { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+.diag__out {
+  margin: 12px 0 0; padding: 11px 12px; max-height: 260px; overflow: auto;
+  background: var(--ink); border: 1px solid var(--draft-soft); border-radius: var(--r-sm);
+  font: 12px/1.75 var(--mono); color: var(--paper-dim); white-space: pre-wrap; word-break: break-word;
+}
+.diag__out b { color: var(--paper); font-weight: 600; }
+.diag__out .yes { color: var(--cyan); }
+.diag__out .no { color: var(--coral); }
+
 /* model picker */
 .seek { display: flex; align-items: center; gap: 9px; padding: 12px 18px; border-bottom: 1px solid var(--draft-soft); color: var(--paper-far); }
 .seek__input { flex: 1; background: none; border: 0; font-size: 14.5px; }

@@ -12,6 +12,52 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;450;500;600&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="styles.css" />
+
+<!-- Boot watchdog. Deliberately a plain inline script with no dependencies:
+     it has to keep working when styles.css or js/app.js are the things that
+     are missing. If the app hasn't signalled that it started, say so on the
+     page instead of leaving a silent dead screen. -->
+<script>
+window.__bpBoot = false;
+window.__bpFailed = [];
+addEventListener('error', function (e) {
+  var t = e.target;
+  if (t && (t.tagName === 'SCRIPT' || t.tagName === 'LINK')) {
+    window.__bpFailed.push((t.src || t.href || '').split('/').slice(-2).join('/'));
+  } else if (e.message) {
+    window.__bpFailed.push(e.message + (e.filename ? ' (' + e.filename.split('/').pop() + ':' + e.lineno + ')' : ''));
+  }
+}, true);
+
+addEventListener('DOMContentLoaded', function () {
+  setTimeout(function () {
+    if (window.__bpBoot) return;
+    var why = window.__bpFailed.length
+      ? 'These files did not load: ' + window.__bpFailed.join(', ') + '.'
+      : 'The page loaded but its script never started.';
+    var body = window.__bpSingle
+      ? '<p style="margin:0 0 10px">This is the single-file build, so nothing can be missing — the script itself failed to run. '
+        + 'Open the browser console (F12) and read the first red line; that is the actual fault.</p>'
+        + '<p style="margin:0 0 10px">The usual causes are a browser extension that blocks inline scripts, '
+        + 'a host that rewrote the file, or a very old browser. Try a private window with extensions off.</p>'
+      : '<p style="margin:0 0 10px">Almost always this means some files never made it into the repository. '
+        + 'Check that all of these exist, with these exact names and folders:</p>'
+        + '<pre style="background:#060c18;border:1px solid #1c2c4c;border-radius:8px;padding:12px;overflow:auto;'
+        + 'font:12.5px/1.7 ui-monospace,Menlo,Consolas,monospace;color:#46c6ea">index.html\nstyles.css\njs/config.js\njs/store.js\njs/api.js\njs/ingest.js\njs/render.js\njs/app.js</pre>'
+        + '<p style="margin:14px 0 0">Open your browser console (F12) for the exact 404s. '
+        + 'If you would rather not deal with folders at all, use the single-file build — one <code>index.html</code> with everything inside it.</p>';
+    var d = document.createElement('div');
+    d.setAttribute('style', 'position:fixed;inset:0;z-index:99999;overflow:auto;padding:32px 22px;'
+      + 'background:#0a1224;color:#e9f1fc;font:15px/1.6 ui-sans-serif,system-ui,sans-serif');
+    d.innerHTML = '<div style="max-width:640px;margin:0 auto">'
+      + '<h1 style="font-size:20px;margin:0 0 14px;color:#ec7361">This copy did not start</h1>'
+      + '<p style="margin:0 0 14px">' + why + '</p>'
+      + body
+      + '</div>';
+    document.body.appendChild(d);
+  }, 4000);
+});
+</script>
 </head>
 <body>
 
@@ -330,6 +376,20 @@
           <button class="btn btn--ghost" id="exportBtn">Export chats</button>
           <button class="btn btn--warn" id="wipeBtn">Delete everything</button>
         </div>
+      </div>
+
+      <div class="diag">
+        <div class="diag__head">
+          <div>
+            <p class="danger__title">Self-check</p>
+            <p class="danger__body">
+              File reading needs a few parser libraries fetched from public CDNs the first time you use them.
+              Some networks block those. Run this if an upload does nothing.
+            </p>
+          </div>
+          <button class="btn btn--ghost" id="diagRun">Run self-check</button>
+        </div>
+        <pre class="diag__out" id="diagOut" hidden></pre>
       </div>
     </div>
   </div>
