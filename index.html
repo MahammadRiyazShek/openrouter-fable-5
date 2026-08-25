@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Blueprint — an OpenRouter workbench</title>
+<meta name="description" content="Chat with any OpenRouter model, drop in zips, PDFs or code, and get buildable files back. Runs entirely in your browser with your own API key." />
+<meta name="color-scheme" content="dark" />
+<meta name="theme-color" content="#0a1224" />
+<link rel="icon" href="favicon.svg" type="image/svg+xml" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;450;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<div class="app" id="app">
+
+  <!-- ───────────────────────── left rail ───────────────────────── -->
+  <aside class="rail" id="rail" aria-label="Chats and files">
+    <div class="rail__head">
+      <a class="mark" href="./" aria-label="Blueprint home">
+        <svg class="mark__glyph" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M3 6h18M3 12h18M3 18h18" />
+          <path d="M8 3v18M16 3v18" />
+        </svg>
+        <span class="mark__text">
+          <span class="mark__name">Blueprint</span>
+          <span class="mark__sub">openrouter workbench</span>
+        </span>
+      </a>
+      <button class="icon-btn rail__collapse" id="railClose" title="Hide panel" aria-label="Hide panel">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>
+      </button>
+    </div>
+
+    <button class="btn btn--draft" id="newChatBtn">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+      New chat
+    </button>
+
+    <section class="rail__section" aria-labelledby="chatsLabel">
+      <header class="rail__label" id="chatsLabel">
+        <span>Chats</span>
+        <span class="tally" id="chatTally">0</span>
+      </header>
+      <div class="chatlist" id="chatList"></div>
+    </section>
+
+    <section class="rail__section rail__section--files" aria-labelledby="filesLabel">
+      <header class="rail__label" id="filesLabel">
+        <span>Workspace files</span>
+        <span class="tally" id="fileTally">0</span>
+      </header>
+      <div class="filelist" id="workspaceList">
+        <p class="rail__empty">Files you send stay listed here. Re-attach any of them to a later message.</p>
+      </div>
+    </section>
+
+    <footer class="rail__foot">
+      <button class="statusbtn" id="keyStatusBtn">
+        <span class="dot" id="keyDot" data-state="off"></span>
+        <span class="statusbtn__text">
+          <span class="statusbtn__label">API key</span>
+          <span class="statusbtn__value" id="keyStatusText">Not connected</span>
+        </span>
+      </button>
+      <button class="icon-btn" id="settingsBtn" title="Settings" aria-label="Settings">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>
+      </button>
+    </footer>
+  </aside>
+
+  <!-- ───────────────────────── centre stage ───────────────────────── -->
+  <main class="stage" id="stage">
+    <header class="topbar">
+      <button class="icon-btn topbar__rail" id="railOpen" title="Show panel" aria-label="Show panel">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      </button>
+
+      <h1 class="topbar__title" id="chatTitle" title="Rename chat" tabindex="0" role="textbox" contenteditable="false">New chat</h1>
+
+      <div class="topbar__right">
+        <button class="modelbtn" id="modelBtn" title="Choose model">
+          <span class="modelbtn__eyebrow">Model</span>
+          <span class="modelbtn__name" id="modelBtnName">claude fable 5</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <button class="icon-btn" id="sheetToggle" title="Show build output" aria-label="Show build output">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h10l6 6v10H4z"/><path d="M14 4v6h6"/></svg>
+          <span class="badge" id="sheetBadge" hidden>0</span>
+        </button>
+      </div>
+    </header>
+
+    <div class="stream" id="stream" aria-live="polite" aria-label="Conversation">
+      <!-- opening screen -->
+      <div class="opener" id="opener">
+        <div class="opener__grid" aria-hidden="true"></div>
+        <p class="eyebrow">Runs in your browser · your key, your files</p>
+        <h2 class="opener__head">Drop in what you have.<br /><em>Get back something built.</em></h2>
+        <p class="opener__body">
+          Paste your OpenRouter key once and every model on your account becomes available — Claude Fable 5,
+          Sonnet, GPT, Gemini, Llama, whatever you have access to. Attach a zip of a codebase, a PDF spec,
+          a spreadsheet, a screenshot, then ask for the thing you actually want. Files the model writes land
+          in the cut sheet on the right, ready to preview or download as a zip.
+        </p>
+
+        <div class="opener__actions">
+          <button class="btn btn--solid" id="openerKeyBtn">Connect your API key</button>
+          <button class="btn btn--ghost" id="openerAttachBtn">Attach files</button>
+        </div>
+
+        <ul class="prompts" id="prompts">
+          <li><button data-prompt="Here's a zip of my project. Read it, then tell me what it does, how it's structured, and the three things you'd fix first.">Audit a codebase from a zip</button></li>
+          <li><button data-prompt="Build me a single-page static site from this spec. Give me every file in full, each in its own code block with the file path in the fence, ready to deploy.">Turn a spec into a deployable site</button></li>
+          <li><button data-prompt="Extract every table in this PDF into clean CSV. One code block per table, with a filename in the fence.">Pull tables out of a PDF</button></li>
+          <li><button data-prompt="Write a Python CLI that does the following, with tests and a README. Use one code block per file with the path in the fence.">Scaffold a Python CLI with tests</button></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="composer" id="composer">
+      <div class="dropveil" id="dropveil" hidden>
+        <div class="dropveil__inner">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 001 1h14a1 1 0 001-1v-3"/></svg>
+          <p>Drop files to attach — zip, pdf, docx, xlsx, csv, images, source code</p>
+        </div>
+      </div>
+
+      <div class="rack" id="rack" hidden></div>
+
+      <div class="composer__row">
+        <button class="icon-btn composer__clip" id="attachBtn" title="Attach files" aria-label="Attach files">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21.4 11.05l-8.5 8.5a5 5 0 01-7.07-7.07l8.49-8.49a3.5 3.5 0 014.95 4.95l-8.49 8.49a2 2 0 01-2.83-2.83l7.79-7.78"/></svg>
+        </button>
+        <input type="file" id="fileInput" multiple hidden />
+
+        <label class="sr-only" for="prompt">Message</label>
+        <textarea id="prompt" class="composer__input" rows="1" placeholder="Describe what you want built, or ask about the files you attached…" spellcheck="true"></textarea>
+
+        <button class="sendbtn" id="sendBtn" title="Send — Enter" aria-label="Send message">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15M13 6l6 6-6 6"/></svg>
+        </button>
+        <button class="sendbtn sendbtn--stop" id="stopBtn" title="Stop generating" aria-label="Stop generating" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1.5"/></svg>
+        </button>
+      </div>
+
+      <div class="composer__meta">
+        <span id="ctxMeta" class="composer__ctx"></span>
+        <span class="composer__hint"><kbd>Enter</kbd> send · <kbd>Shift</kbd>+<kbd>Enter</kbd> newline</span>
+      </div>
+    </div>
+  </main>
+
+  <!-- ───────────────────────── cut sheet ───────────────────────── -->
+  <aside class="sheet" id="sheet" aria-label="Build output">
+    <header class="sheet__head">
+      <div>
+        <p class="eyebrow">Cut sheet</p>
+        <h2 class="sheet__title">Files from this chat</h2>
+      </div>
+      <button class="icon-btn" id="sheetClose" title="Hide build output" aria-label="Hide build output">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </header>
+
+    <div class="sheet__body" id="sheetBody">
+      <p class="sheet__empty">
+        Nothing built yet. Ask for code and every file the model writes with a path in its fence
+        <span class="mono">```js src/app.js</span> shows up here as its own file.
+      </p>
+    </div>
+
+    <footer class="sheet__foot" id="sheetFoot" hidden>
+      <button class="btn btn--solid" id="zipBtn">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5"/><path d="M5 19h14"/></svg>
+        Download all as zip
+      </button>
+      <button class="btn btn--ghost" id="previewBtn" hidden>Preview site</button>
+    </footer>
+  </aside>
+</div>
+
+<!-- ───────────────────────── key dialog ───────────────────────── -->
+<dialog class="modal" id="keyModal">
+  <form class="modal__panel" id="keyForm" method="dialog">
+    <header class="modal__head">
+      <div>
+        <p class="eyebrow">Connect</p>
+        <h2>Your OpenRouter API key</h2>
+      </div>
+      <button type="button" class="icon-btn" data-close title="Close" aria-label="Close">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </header>
+
+    <div class="modal__body">
+      <label class="field">
+        <span class="field__label">Key</span>
+        <input class="field__input mono" id="keyInput" type="password" autocomplete="off" spellcheck="false"
+               placeholder="sk-or-v1-…" />
+      </label>
+
+      <label class="check">
+        <input type="checkbox" id="keyRemember" checked />
+        <span>
+          Keep this key on this device
+          <em>Stored in this browser only. Uncheck and it lives in the tab until you close it.</em>
+        </span>
+      </label>
+
+      <p class="note">
+        The key goes straight from this page to <span class="mono">openrouter.ai</span> and nowhere else —
+        there is no backend here to send it to. Get one at
+        <a href="https://openrouter.ai/settings/keys" target="_blank" rel="noopener">openrouter.ai/settings/keys</a>.
+      </p>
+
+      <p class="alert" id="keyError" hidden></p>
+      <p class="okay" id="keyOkay" hidden></p>
+    </div>
+
+    <footer class="modal__foot">
+      <button type="button" class="btn btn--ghost" id="keyForget">Forget key</button>
+      <button type="submit" class="btn btn--solid" id="keySave">Connect</button>
+    </footer>
+  </form>
+</dialog>
+
+<!-- ───────────────────────── model dialog ───────────────────────── -->
+<dialog class="modal modal--tall" id="modelModal">
+  <div class="modal__panel">
+    <header class="modal__head">
+      <div>
+        <p class="eyebrow">Choose</p>
+        <h2>Model</h2>
+      </div>
+      <button type="button" class="icon-btn" data-close title="Close" aria-label="Close">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </header>
+
+    <div class="modal__body modal__body--flush">
+      <div class="seek">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5L21 21"/></svg>
+        <input id="modelSeek" class="seek__input" type="search" placeholder="Search 300+ models — try “fable”, “claude”, “free”" autocomplete="off" />
+      </div>
+      <div class="modelfilters" id="modelFilters">
+        <button class="chip is-on" data-filter="all">All</button>
+        <button class="chip" data-filter="anthropic">Anthropic</button>
+        <button class="chip" data-filter="vision">Vision</button>
+        <button class="chip" data-filter="long">200k+ context</button>
+        <button class="chip" data-filter="free">Free</button>
+      </div>
+      <div class="modellist" id="modelList"></div>
+      <div class="modelmanual">
+        <label class="field">
+          <span class="field__label">Or type an exact model ID</span>
+          <input class="field__input mono" id="modelManual" placeholder="anthropic/claude-fable-5" autocomplete="off" spellcheck="false" />
+        </label>
+        <button class="btn btn--ghost" id="modelManualUse">Use this ID</button>
+      </div>
+    </div>
+  </div>
+</dialog>
+
+<!-- ───────────────────────── settings dialog ───────────────────────── -->
+<dialog class="modal modal--tall" id="settingsModal">
+  <div class="modal__panel">
+    <header class="modal__head">
+      <div>
+        <p class="eyebrow">Adjust</p>
+        <h2>Settings</h2>
+      </div>
+      <button type="button" class="icon-btn" data-close title="Close" aria-label="Close">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </header>
+
+    <div class="modal__body">
+      <label class="field">
+        <span class="field__label">System prompt</span>
+        <textarea class="field__input field__input--area" id="setSystem" rows="7"></textarea>
+        <span class="field__help">Sent as the first message of every turn. The default asks for file paths in code fences, which is what feeds the cut sheet.</span>
+      </label>
+
+      <div class="grid2">
+        <label class="field">
+          <span class="field__label">Temperature <span class="mono" id="setTempOut">0.7</span></span>
+          <input class="field__range" id="setTemp" type="range" min="0" max="2" step="0.05" />
+        </label>
+        <label class="field">
+          <span class="field__label">Max output tokens</span>
+          <input class="field__input mono" id="setMaxTokens" type="number" min="0" step="256" placeholder="model default" />
+        </label>
+      </div>
+
+      <label class="field">
+        <span class="field__label">History sent with each turn <span class="mono" id="setHistOut">20</span> messages</span>
+        <input class="field__range" id="setHistory" type="range" min="2" max="60" step="2" />
+        <span class="field__help">Lower this if a long chat starts costing more than it's worth.</span>
+      </label>
+
+      <label class="field">
+        <span class="field__label">PDF handling</span>
+        <select class="field__input" id="setPdfMode">
+          <option value="local">Extract text in the browser (works with every model)</option>
+          <option value="native">Send the PDF itself to OpenRouter (better with scans, costs more)</option>
+        </select>
+      </label>
+
+      <label class="check">
+        <input type="checkbox" id="setStream" checked />
+        <span>Stream replies as they're written<em>Turn off if your network mangles streaming responses.</em></span>
+      </label>
+
+      <label class="check">
+        <input type="checkbox" id="setReasoning" />
+        <span>Show reasoning when a model exposes it<em>Reasoning arrives in a collapsed block above the answer.</em></span>
+      </label>
+
+      <div class="danger">
+        <div>
+          <p class="danger__title">Stored data</p>
+          <p class="danger__body" id="storageMeta">Chats, settings and your key live in this browser's local storage.</p>
+        </div>
+        <div class="danger__acts">
+          <button class="btn btn--ghost" id="exportBtn">Export chats</button>
+          <button class="btn btn--warn" id="wipeBtn">Delete everything</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</dialog>
+
+<!-- ───────────────────────── preview dialog ───────────────────────── -->
+<dialog class="modal modal--wide" id="previewModal">
+  <div class="modal__panel">
+    <header class="modal__head">
+      <div>
+        <p class="eyebrow">Sandbox</p>
+        <h2 id="previewTitle">Preview</h2>
+      </div>
+      <button type="button" class="icon-btn" data-close title="Close" aria-label="Close">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </header>
+    <div class="modal__body modal__body--flush">
+      <iframe id="previewFrame" class="preview" title="Preview of generated site" sandbox="allow-scripts allow-modals allow-forms allow-popups"></iframe>
+    </div>
+  </div>
+</dialog>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

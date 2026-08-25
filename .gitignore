@@ -1,0 +1,8 @@
+.DS_Store
+Thumbs.db
+*.log
+.vercel
+node_modules/
+
+# module copies made by the .dev test scripts
+.dev/*.js
